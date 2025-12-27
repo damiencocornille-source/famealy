@@ -21,54 +21,120 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<"dashboard" | "meals">("dashboard");
   const [isLoading, setIsLoading] = useState(true);
 
-  // Persistence + Midnight reset + Supabase session test
+  // 1) Au chargement : récupérer session Supabase + hydrater ton "User app" depuis localStorage
   useEffect(() => {
-    const savedUser = localStorage.getItem(STORAGE_KEY_USER);
-    const today = new Date().toLocaleDateString();
-    const lastReset = localStorage.getItem(STORAGE_KEY_LAST_RESET);
+    let isMounted = true;
 
-    let currentUser: User | null = savedUser ? JSON.parse(savedUser) : null;
+    async function init() {
+      // A) Reset quotidien (ta logique existante)
+      const savedUser = localStorage.getItem(STORAGE_KEY_USER);
+      const today = new Date().toLocaleDateString();
+      const lastReset = localStorage.getItem(STORAGE_KEY_LAST_RESET);
 
-    // Reset statuses when a new day starts
-    if (lastReset !== today) {
-      const allUsers: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || "[]");
+      let currentUser: User | null = savedUser ? JSON.parse(savedUser) : null;
 
-      const resetUsers = allUsers.map((u) => ({
-        ...u,
-        currentStatus: "UNSET" as Status,
-      }));
+      if (lastReset !== today) {
+        const allUsers: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || "[]");
 
-      localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(resetUsers));
+        const resetUsers = allUsers.map((u) => ({
+          ...u,
+          currentStatus: "UNSET" as Status,
+        }));
 
-      if (currentUser) {
-        currentUser.currentStatus = "UNSET";
-        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(currentUser));
+        localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(resetUsers));
+
+        if (currentUser) {
+          currentUser.currentStatus = "UNSET";
+          localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(currentUser));
+        }
+
+        localStorage.setItem(STORAGE_KEY_LAST_RESET, today);
       }
 
-      localStorage.setItem(STORAGE_KEY_LAST_RESET, today);
-    }
+      // B) Session Supabase (source de vérité pour l'auth)
+      const { data } = await supabase.auth.getSession();
+      const sessionUser = data.session?.user ?? null;
 
-    if (currentUser) {
+      if (!isMounted) return;
+
+      if (!sessionUser) {
+        setAuthState({ user: null, isAuthenticated: false });
+        setIsLoading(false);
+        return;
+      }
+
+      // C) Construire un User pour ton app :
+      // - On garde l'id Supabase (uuid) comme id
+      // - On garde name depuis user_metadata si présent
+      // - On récupère familyId depuis localStorage si tu l'avais déjà
+      const hydratedUser: User = {
+        id: sessionUser.id,
+        email: sessionUser.email ?? "",
+        name: (sessionUser.user_metadata?.name as string) || currentUser?.name || "User",
+        currentStatus: currentUser?.currentStatus || ("UNSET" as Status),
+        familyId: currentUser?.familyId,
+      } as User;
+
+      // On synchronise aussi localStorage pour que ton app continue de marcher
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(hydratedUser));
+
       setAuthState({
-        user: currentUser,
+        user: hydratedUser,
         isAuthenticated: true,
       });
+
+      setIsLoading(false);
     }
 
-    setIsLoading(false);
+    init();
 
-    // ✅ Supabase test (should log null if not logged in)
-    supabase.auth.getSession().then(({ data }) => {
-      console.log("SUPABASE SESSION:", data.session);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2) Écouter les changements d'auth Supabase (login/logout)
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const sessionUser = session?.user ?? null;
+
+      if (!sessionUser) {
+        setAuthState({ user: null, isAuthenticated: false });
+        localStorage.removeItem(STORAGE_KEY_USER);
+        return;
+      }
+
+      const savedUser = localStorage.getItem(STORAGE_KEY_USER);
+      const currentUser: User | null = savedUser ? JSON.parse(savedUser) : null;
+
+      const hydratedUser: User = {
+        id: sessionUser.id,
+        email: sessionUser.email ?? "",
+        name: (sessionUser.user_metadata?.name as string) || currentUser?.name || "User",
+        currentStatus: currentUser?.currentStatus || ("UNSET" as Status),
+        familyId: currentUser?.familyId,
+      } as User;
+
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(hydratedUser));
+
+      setAuthState({
+        user: hydratedUser,
+        isAuthenticated: true,
+      });
     });
+
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   const handleLogin = (user: User) => {
+    // Après login Supabase, Login.tsx appelle onLogin(user)
+    // Ici, on garde juste la synchro local + state
     setAuthState({ user, isAuthenticated: true });
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setAuthState({ user: null, isAuthenticated: false });
     localStorage.removeItem(STORAGE_KEY_USER);
   };
@@ -128,4 +194,5 @@ const App: React.FC = () => {
     </div>
   );
 };
+
 export default App;

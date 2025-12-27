@@ -1,3 +1,30 @@
+import { useEffect } from "react";
+import { supabase } from "./supabaseClient";
+
+function App() {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      console.log("SESSION:", data.session);
+    });
+  }, []);
+
+  return <h1>Famealy</h1>;
+}
+
+export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import React, { useState, useEffect } from 'react';
 import { User, Family, Meal, Status, AuthState } from './types';

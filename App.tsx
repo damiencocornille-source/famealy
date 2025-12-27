@@ -117,3 +117,13 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-md mx-auto px-4 pt-6">
+        {currentPage === "dashboard" ? (
+          <Dashboard user={authState.user!} onUpdateUser={updateUserInStorage} />
+        ) : (
+          <MealsPage user={authState.user!} />
+        )}
+      </main>
+
+      <Navigation activePage={currentPage} onNavigate={setCurrentPage} />
+    </div>
+  );

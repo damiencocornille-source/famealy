@@ -1,52 +1,27 @@
-import { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 
-function App() {
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      console.log("SESSION:", data.session);
-    });
-  }, []);
+import { User, Status, AuthState } from "./types";
+import Login from "./components/Login";
+import Dashboard from "./components/Dashboard";
+import MealsPage from "./components/MealsPage";
+import Onboarding from "./components/Onboarding";
+import Navigation from "./components/Navigation";
 
-  return <h1>Famealy</h1>;
-}
-
-export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import React, { useState, useEffect } from 'react';
-import { User, Family, Meal, Status, AuthState } from './types';
-import Login from './components/Login';
-import Dashboard from './components/Dashboard';
-import MealsPage from './components/MealsPage';
-import Onboarding from './components/Onboarding';
-import Navigation from './components/Navigation';
-
-const STORAGE_KEY_USER = 'familyhub_user';
-const STORAGE_KEY_USERS = 'familyhub_users_list';
-const STORAGE_KEY_LAST_RESET = 'famealy_last_reset_date';
+const STORAGE_KEY_USER = "familyhub_user";
+const STORAGE_KEY_USERS = "familyhub_users_list";
+const STORAGE_KEY_LAST_RESET = "famealy_last_reset_date";
 
 const App: React.FC = () => {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     isAuthenticated: false,
   });
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'meals'>('dashboard');
+
+  const [currentPage, setCurrentPage] = useState<"dashboard" | "meals">("dashboard");
   const [isLoading, setIsLoading] = useState(true);
 
-  // Persistence and Midnight Reset logic
+  // Persistence + Midnight reset + Supabase session test
   useEffect(() => {
     const savedUser = localStorage.getItem(STORAGE_KEY_USER);
     const today = new Date().toLocaleDateString();
@@ -54,21 +29,22 @@ const App: React.FC = () => {
 
     let currentUser: User | null = savedUser ? JSON.parse(savedUser) : null;
 
-    // Check if we need to reset statuses because a new day has started
+    // Reset statuses when a new day starts
     if (lastReset !== today) {
-      const allUsers: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
-      
-      // Reset all users globally
-      const resetUsers = allUsers.map(u => ({ ...u, currentStatus: 'UNSET' as Status }));
+      const allUsers: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || "[]");
+
+      const resetUsers = allUsers.map((u) => ({
+        ...u,
+        currentStatus: "UNSET" as Status,
+      }));
+
       localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(resetUsers));
-      
-      // Reset current user if logged in
+
       if (currentUser) {
-        currentUser.currentStatus = 'UNSET';
+        currentUser.currentStatus = "UNSET";
         localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(currentUser));
       }
-      
-      // Update reset date
+
       localStorage.setItem(STORAGE_KEY_LAST_RESET, today);
     }
 
@@ -78,7 +54,13 @@ const App: React.FC = () => {
         isAuthenticated: true,
       });
     }
+
     setIsLoading(false);
+
+    // ✅ Supabase test (should log null if not logged in)
+    supabase.auth.getSession().then(({ data }) => {
+      console.log("SUPABASE SESSION:", data.session);
+    });
   }, []);
 
   const handleLogin = (user: User) => {
@@ -92,12 +74,11 @@ const App: React.FC = () => {
   };
 
   const updateUserInStorage = (updatedUser: User) => {
-    setAuthState(prev => ({ ...prev, user: updatedUser }));
+    setAuthState((prev) => ({ ...prev, user: updatedUser }));
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedUser));
-    
-    // Also update in the global users list for other "family members"
-    const allUsers: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
-    const updatedAllUsers = allUsers.map(u => u.id === updatedUser.id ? updatedUser : u);
+
+    const allUsers: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || "[]");
+    const updatedAllUsers = allUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u));
     localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(updatedAllUsers));
   };
 
@@ -114,14 +95,20 @@ const App: React.FC = () => {
   }
 
   if (!authState.user?.familyId) {
-    return <Onboarding user={authState.user!} onUpdateUser={updateUserInStorage} onLogout={handleLogout} />;
+    return (
+      <Onboarding
+        user={authState.user!}
+        onUpdateUser={updateUserInStorage}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (
     <div className="min-h-screen bg-sky-50 pb-24">
       <header className="bg-white shadow-sm sticky top-0 z-10 px-4 py-4 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-sky-600 tracking-tight">famealy</h1>
-        <button 
+        <button
           onClick={handleLogout}
           className="text-sm font-medium text-sky-500 hover:text-sky-700 bg-sky-50 px-3 py-1.5 rounded-full transition-colors"
         >
@@ -130,16 +117,3 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-md mx-auto px-4 pt-6">
-        {currentPage === 'dashboard' ? (
-          <Dashboard user={authState.user!} onUpdateUser={updateUserInStorage} />
-        ) : (
-          <MealsPage user={authState.user!} />
-        )}
-      </main>
-
-      <Navigation activePage={currentPage} onNavigate={setCurrentPage} />
-    </div>
-  );
-};
-
-export default App;

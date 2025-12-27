@@ -127,3 +127,5 @@ const App: React.FC = () => {
       <Navigation activePage={currentPage} onNavigate={setCurrentPage} />
     </div>
   );
+};
+export default App;
